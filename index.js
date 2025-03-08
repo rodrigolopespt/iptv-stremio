@@ -1,5 +1,7 @@
-const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
+const { addonBuilder, serveHTTP, publishToCentral } = require("stremio-addon-sdk");
 const fetch = require('node-fetch');
+const http = require('http');
+const url = require('url');
 
 // Define manifest
 const manifest = {
@@ -139,13 +141,68 @@ function extractAttribute(line, attr) {
 }
 
 // For local development
-if (process.env.NODE_ENV !== 'production') {
+if (!process.env.VERCEL) {
     serveHTTP(addon.getInterface(), { port: 7000 });
     console.log('Addon running at http://127.0.0.1:7000');
 }
 
 // For Vercel (serverless)
-module.exports = async (req, res) => {
-    const handle = addon.getInterface();
-    await handle(req, res);
+module.exports = (req, res) => {
+    const addonInterface = addon.getInterface();
+    const urlParts = url.parse(req.url, true);
+
+    // Convert the incoming request to what the addon SDK expects
+    const newReq = {
+        method: req.method,
+        headers: req.headers,
+        path: urlParts.pathname,
+        url: urlParts.pathname,
+        query: urlParts.query
+    };
+
+    // Create a response wrapper to adapt to the Vercel serverless environment
+    const newRes = {
+        setHeader: (key, value) => res.setHeader(key, value),
+        statusCode: 200,
+        end: (content) => {
+            // Set appropriate content type if not already set
+            if (!res.headersSent && typeof content === 'string') {
+                if (content.startsWith('{') || content.startsWith('[')) {
+                    res.setHeader('Content-Type', 'application/json');
+                } else {
+                    res.setHeader('Content-Type', 'text/plain');
+                }
+            }
+            res.end(content);
+        },
+        writeHead: (statusCode, headers) => res.writeHead(statusCode, headers)
+    };
+
+    // Handle CORS for browser access
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+
+    // Handle preflight requests
+    if (req.method === 'OPTIONS') {
+        res.statusCode = 200;
+        return res.end();
+    }
+
+    // Forward the request to the addon interface
+    const handlerName = getHandlerName(urlParts.pathname);
+    if (addonInterface[handlerName]) {
+        addonInterface[handlerName](newReq, newRes);
+    } else {
+        // Default to manifest if no specific handler
+        addonInterface.manifest(newReq, newRes);
+    }
 };
+
+// Helper function to determine which handler to use based on the path
+function getHandlerName(path) {
+    if (path.includes('/catalog/')) return 'catalog';
+    if (path.includes('/stream/')) return 'stream';
+    if (path.includes('/meta/')) return 'meta';
+    if (path.includes('/subtitles/')) return 'subtitles';
+    return 'manifest';
+}
