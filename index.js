@@ -1,6 +1,5 @@
-const { addonBuilder, serveHTTP, publishToCentral } = require("stremio-addon-sdk");
+const { addonBuilder, serveHTTP } = require("stremio-addon-sdk");
 const fetch = require('node-fetch');
-const http = require('http');
 const url = require('url');
 
 // Define manifest
@@ -51,7 +50,8 @@ addon.defineCatalogHandler(async ({ type, id, extra }) => {
             throw error;
         }
     } else {
-        throw new Error("Catálogo não suportado: " + id);
+        // Return empty catalog for unsupported IDs
+        return { metas: [] };
     }
 });
 
@@ -140,69 +140,112 @@ function extractAttribute(line, attr) {
     return match ? match[1] : '';
 }
 
+// Get the interface once
+const addonInterface = addon.getInterface();
+
 // For local development
 if (!process.env.VERCEL) {
-    serveHTTP(addon.getInterface(), { port: 7000 });
+    serveHTTP(addonInterface, { port: 7000 });
     console.log('Addon running at http://127.0.0.1:7000');
 }
 
 // For Vercel (serverless)
-module.exports = (req, res) => {
-    const addonInterface = addon.getInterface();
-    const urlParts = url.parse(req.url, true);
-
-    // Convert the incoming request to what the addon SDK expects
-    const newReq = {
-        method: req.method,
-        headers: req.headers,
-        path: urlParts.pathname,
-        url: urlParts.pathname,
-        query: urlParts.query
-    };
-
-    // Create a response wrapper to adapt to the Vercel serverless environment
-    const newRes = {
-        setHeader: (key, value) => res.setHeader(key, value),
-        statusCode: 200,
-        end: (content) => {
-            // Set appropriate content type if not already set
-            if (!res.headersSent && typeof content === 'string') {
-                if (content.startsWith('{') || content.startsWith('[')) {
-                    res.setHeader('Content-Type', 'application/json');
-                } else {
-                    res.setHeader('Content-Type', 'text/plain');
-                }
-            }
-            res.end(content);
-        },
-        writeHead: (statusCode, headers) => res.writeHead(statusCode, headers)
-    };
-
-    // Handle CORS for browser access
+module.exports = async (req, res) => {
+    // Set CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
 
     // Handle preflight requests
     if (req.method === 'OPTIONS') {
         res.statusCode = 200;
-        return res.end();
+        res.end();
+        return;
     }
 
-    // Forward the request to the addon interface
-    const handlerName = getHandlerName(urlParts.pathname);
-    if (addonInterface[handlerName]) {
-        addonInterface[handlerName](newReq, newRes);
-    } else {
-        // Default to manifest if no specific handler
-        addonInterface.manifest(newReq, newRes);
+    // Parse the URL
+    const parsedUrl = url.parse(req.url, true);
+    const path = parsedUrl.pathname || '/';
+
+    console.log(`Request to: ${path}`);
+
+    // Handle manifest request
+    if (path === '/' || path === '/manifest.json') {
+        res.setHeader('Content-Type', 'application/json');
+        res.statusCode = 200;
+        res.end(JSON.stringify(addonInterface.manifest));
+        return;
     }
+
+    // Handle catalog request
+    const catalogMatch = path.match(/^\/catalog\/([^\/]+)\/([^\/]+)\.json$/);
+    if (catalogMatch) {
+        const type = catalogMatch[1];
+        const id = catalogMatch[2];
+        const extra = parsedUrl.query || {};
+
+        console.log(`Catalog Request - Type: ${type}, ID: ${id}, Extra:`, extra);
+
+        try {
+            const result = await addonInterface.catalog(type, id, extra);
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 200;
+            res.end(JSON.stringify(result));
+        } catch (error) {
+            console.error('Catalog error:', error);
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 500;
+            res.end(JSON.stringify({ error: error.message || 'Unknown catalog error' }));
+        }
+        return;
+    }
+
+    // Handle stream request
+    const streamMatch = path.match(/^\/stream\/([^\/]+)\/(.+)\.json$/);
+    if (streamMatch) {
+        const type = streamMatch[1];
+        const id = streamMatch[2];
+
+        console.log(`Stream Request - Type: ${type}, ID: ${id}`);
+
+        try {
+            const result = await addonInterface.stream(type, id);
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 200;
+            res.end(JSON.stringify(result));
+        } catch (error) {
+            console.error('Stream error:', error);
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 500;
+            res.end(JSON.stringify({ error: error.message || 'Unknown stream error' }));
+        }
+        return;
+    }
+
+    // Handle meta request (if needed)
+    const metaMatch = path.match(/^\/meta\/([^\/]+)\/(.+)\.json$/);
+    if (metaMatch) {
+        const type = metaMatch[1];
+        const id = metaMatch[2];
+
+        console.log(`Meta Request - Type: ${type}, ID: ${id}`);
+
+        try {
+            const result = await addonInterface.meta(type, id);
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 200;
+            res.end(JSON.stringify(result));
+        } catch (error) {
+            console.error('Meta error:', error);
+            res.setHeader('Content-Type', 'application/json');
+            res.statusCode = 500;
+            res.end(JSON.stringify({ error: error.message || 'Unknown meta error' }));
+        }
+        return;
+    }
+
+    // If nothing matched, return 404
+    res.setHeader('Content-Type', 'application/json');
+    res.statusCode = 404;
+    res.end(JSON.stringify({ error: 'Not found' }));
 };
-
-// Helper function to determine which handler to use based on the path
-function getHandlerName(path) {
-    if (path.includes('/catalog/')) return 'catalog';
-    if (path.includes('/stream/')) return 'stream';
-    if (path.includes('/meta/')) return 'meta';
-    if (path.includes('/subtitles/')) return 'subtitles';
-    return 'manifest';
-}
