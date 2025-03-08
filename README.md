@@ -34,8 +34,6 @@ Este addon permite carregar listas IPTV em formato M3U no Stremio, transformando
 
 ## Hospedar gratuitamente no Vercel
 
-Você pode hospedar este addon gratuitamente na Vercel seguindo estes passos:
-
 ### Preparação
 
 1. Crie uma conta em [Vercel](https://vercel.com/) se ainda não tiver uma.
@@ -47,42 +45,10 @@ Você pode hospedar este addon gratuitamente na Vercel seguindo estes passos:
 
 ### Configuração para Vercel
 
-1. Crie um arquivo `vercel.json` na raiz do projeto:
+O projeto já está configurado com os arquivos necessários para a Vercel:
 
-   ```json
-   {
-     "version": 2,
-     "builds": [
-       {
-         "src": "index.js",
-         "use": "@vercel/node"
-       }
-     ],
-     "routes": [
-       {
-         "src": "/(.*)",
-         "dest": "/index.js"
-       }
-     ]
-   }
-   ```
-
-2. Modifique o arquivo `index.js` para funcionar corretamente no ambiente serverless.
-   Encontre a parte onde o servidor é iniciado e substitua por:
-
-   ```javascript
-   // Para desenvolvimento local
-   if (process.env.NODE_ENV !== 'production') {
-     serveHTTP(addon.getInterface(), { port: 7000 });
-     console.log('Addon running at http://127.0.0.1:7000');
-   }
-
-   // Para Vercel (serverless)
-   module.exports = async (req, res) => {
-     const handle = addon.getInterface();
-     await handle(req, res);
-   };
-   ```
+- `vercel.json` - Configurações para o ambiente Vercel
+- Modificações no `index.js` para suportar o ambiente serverless
 
 ### Implantação
 
@@ -134,6 +100,23 @@ Você pode hospedar este addon gratuitamente na Vercel seguindo estes passos:
 
 5. Clique em qualquer canal para começar a reprodução.
 
+## Solução de problemas
+
+### O addon não carrega na Vercel
+
+Se você encontrar erros na implantação do Vercel, verifique os logs de erro na interface da Vercel. Problemas comuns incluem:
+
+- Incompatibilidade de versão do Node.js
+- Problemas de CORS
+- Formato incorreto de URL em requisições
+
+### O Stremio não consegue acessar o addon
+
+Certifique-se de que:
+- A URL do addon está correta, incluindo `/manifest.json` no final
+- O addon está corretamente implantado e acessível via navegador
+- Não há bloqueios de firewall ou restrições de rede
+
 ## Notas
 
 - O arquivo M3U deve estar em um formato padrão com entradas `#EXTINF`.
@@ -144,10 +127,7 @@ Você pode hospedar este addon gratuitamente na Vercel seguindo estes passos:
 
 - Atualmente, o addon não suporta autenticação complexa.
 - Playlistas muito grandes podem levar algum tempo para carregar.
-
-## Contribuições
-
-Contribuições são bem-vindas! Sinta-se à vontade para enviar sugestões, relatar problemas ou enviar pull requests.
+- Ao usar com a Vercel no plano gratuito, há limites de tempo de execução e requisições por mês.
 
 ## Licença
 
