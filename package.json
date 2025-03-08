@@ -1,0 +1,19 @@
+{
+    "name": "stremio-m3u-loader",
+    "version": "0.1.0",
+    "description": "Stremio addon to load M3U playlists from external URLs",
+    "main": "index.js",
+    "scripts": {
+        "start": "node index.js",
+        "dev": "nodemon index.js"
+    },
+    "author": "rodrigomataslopes",
+    "license": "MIT",
+    "dependencies": {
+        "stremio-addon-sdk": "^1.6.7",
+        "node-fetch": "^2.6.7"
+    },
+    "devDependencies": {
+        "nodemon": "^2.0.15"
+    }
+}
